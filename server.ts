@@ -402,13 +402,24 @@ app.post("/api/settings", (req, res) => {
 });
 
 
+// API routes are defined above this line
+
 async function startServer() {
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+  } else {
+    // Serve static files in production
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    // Fallback to index.html for SPA routing, ensuring API routes are not overridden
+    app.get(/^(?!\/api\/).*$/, (req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
