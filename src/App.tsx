@@ -172,7 +172,14 @@ export default function App() {
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)}
           onSave={async () => {
+            // The sync is now triggered inside the modal, just refetch data
             await fetchDashboard();
+            setIsSettingsOpen(false);
+          }}
+          onSyncStart={() => setUploading(true)}
+          onSyncEnd={() => {
+            fetchDashboard();
+            setUploading(false);
             setIsSettingsOpen(false);
           }}
         />
@@ -528,7 +535,13 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function SettingsModal({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: () => void }) {
+function SettingsModal({ isOpen, onClose, onSave, onSyncStart, onSyncEnd }: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  onSave: () => void, 
+  onSyncStart: () => void, 
+  onSyncEnd: () => void 
+}) {
   const [sheetUrl, setSheetUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -552,9 +565,14 @@ function SettingsModal({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
         body: JSON.stringify({ sheet_url: sheetUrl }),
       });
       if (res.ok) {
+        onSave(); // Close modal immediately
+        onSyncStart(); // Show loading indicator on main screen
         // Trigger a sync after saving
-        await fetch("/api/sync-google", { method: "POST" });
-        onSave();
+        try {
+          await fetch("/api/sync-google", { method: "POST" });
+        } finally {
+          onSyncEnd(); // Refetch data and hide loading indicator
+        }
       }
     } catch (err) {
       console.error("Erro ao salvar configurações:", err);
