@@ -9,8 +9,8 @@ import fs from "fs";
 const app = express();
 const PORT = 3000;
 
-// Ensure the data directory exists
-const dataDir = path.join(process.cwd(), 'data');
+// Ensure the data directory exists in the writable /tmp folder for serverless environments
+const dataDir = path.join('/tmp', 'data');
 if (!fs.existsSync(dataDir)) {
   console.log(`Criando diretório de dados em: ${dataDir}`);
   fs.mkdirSync(dataDir, { recursive: true });
