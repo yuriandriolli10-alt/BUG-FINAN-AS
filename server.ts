@@ -418,6 +418,15 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+  } else {
+    // Production: Serve static files from 'dist' and handle SPA routing
+    const distPath = path.resolve(process.cwd(), 'dist');
+    console.log(`Servindo arquivos estáticos de: ${distPath}`);
+    app.use(express.static(distPath));
+    // All non-API routes should serve the SPA
+    app.get(/^(?!\/api).*/, (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
