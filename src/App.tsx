@@ -58,8 +58,15 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Falha ao processar a planilha.");
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || `Ocorreu um erro no servidor.`);
+        } else {
+          const errorText = await res.text();
+          console.error("Resposta não-JSON do servidor:", errorText);
+          throw new Error(`Erro de comunicação com o servidor (Status: ${res.status}).`);
+        }
       }
 
       const json = await res.json();
