@@ -12,7 +12,16 @@ const PORT = 3000;
 // Ensure the data directory exists
 const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
+  console.log(`Criando diretório de dados em: ${dataDir}`);
   fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Check for write permissions
+try {
+  fs.accessSync(dataDir, fs.constants.W_OK);
+  console.log(`Diretório de dados (${dataDir}) tem permissão de escrita.`);
+} catch (err) {
+  console.error(`ERRO CRÍTICO: O diretório de dados (${dataDir}) não tem permissão de escrita. A aplicação não poderá salvar dados.`);
 }
 
 const db = new Database(path.join(dataDir, "finance.db"));

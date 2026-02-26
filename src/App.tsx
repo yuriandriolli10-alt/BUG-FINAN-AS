@@ -171,16 +171,11 @@ export default function App() {
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)}
-          onSave={async () => {
-            // The sync is now triggered inside the modal, just refetch data
-            await fetchDashboard();
-            setIsSettingsOpen(false);
-          }}
           onSyncStart={() => setUploading(true)}
           onSyncEnd={() => {
             fetchDashboard();
             setUploading(false);
-            setIsSettingsOpen(false);
+            setIsSettingsOpen(false); // Ensure modal is closed
           }}
         />
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -535,10 +530,9 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function SettingsModal({ isOpen, onClose, onSave, onSyncStart, onSyncEnd }: { 
+function SettingsModal({ isOpen, onClose, onSyncStart, onSyncEnd }: { 
   isOpen: boolean, 
   onClose: () => void, 
-  onSave: () => void, 
   onSyncStart: () => void, 
   onSyncEnd: () => void 
 }) {
@@ -559,24 +553,37 @@ function SettingsModal({ isOpen, onClose, onSave, onSyncStart, onSyncEnd }: {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const res = await fetch("/api/settings", {
+      // 1. Save the setting
+      const settingsRes = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sheet_url: sheetUrl }),
       });
-      if (res.ok) {
-        onSave(); // Close modal immediately
-        onSyncStart(); // Show loading indicator on main screen
-        // Trigger a sync after saving
-        try {
-          await fetch("/api/sync-google", { method: "POST" });
-        } finally {
-          onSyncEnd(); // Refetch data and hide loading indicator
-        }
+
+      if (!settingsRes.ok) {
+        const errorData = await settingsRes.json().catch(() => ({ error: "Erro de comunicação com o servidor." }));
+        alert(`Falha ao salvar: ${errorData.error}`);
+        setIsSaving(false); // Stop here
+        return;
       }
+      
+      // 2. Close modal and start global loading spinner
+      onClose(); 
+      onSyncStart();
+      
+      // 3. Trigger the sync
+      const syncRes = await fetch("/api/sync-google", { method: "POST" });
+      if (!syncRes.ok) {
+          const errorData = await syncRes.json().catch(() => ({ error: "Erro desconhecido na sincronização." }));
+          alert(`Falha na sincronização: ${errorData.error}. Verifique o link e as permissões de compartilhamento.`);
+      }
+
     } catch (err) {
-      console.error("Erro ao salvar configurações:", err);
+      console.error("Erro na operação de salvar e sincronizar:", err);
+      alert("Ocorreu um erro de rede. Verifique sua conexão e tente novamente.");
     } finally {
+      // 4. Always end the sync process to refresh data and hide spinner
+      onSyncEnd();
       setIsSaving(false);
     }
   };
