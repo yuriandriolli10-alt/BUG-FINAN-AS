@@ -7,7 +7,7 @@ import {
   Upload, TrendingUp, TrendingDown, Wallet, Calendar, 
   Filter, Download, ChevronRight, AlertCircle, CheckCircle2,
   Clock, DollarSign, LayoutDashboard, PieChart as PieChartIcon,
-  Table as TableIcon, FileSpreadsheet
+  Table as TableIcon, FileSpreadsheet, Settings, X, Save
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -26,6 +26,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"geral" | "mensal" | "anual">("geral");
   const [selectedMonth, setSelectedMonth] = useState<string>("JANEIRO");
   const [uploading, setUploading] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const fetchDashboard = async () => {
     try {
@@ -155,16 +156,26 @@ export default function App() {
             Sincronizar Google
           </button>
 
-          <label className="flex items-center justify-center gap-2 w-full py-3 bg-[#00704A] hover:bg-[#006241] text-white rounded-xl cursor-pointer transition-all shadow-lg shadow-green-900/10">
-            {uploading ? <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" /> : <Upload size={18} />}
-            <span className="font-semibold text-sm">Upload Manual</span>
-            <input type="file" className="hidden" accept=".xlsx" onChange={handleUpload} />
-          </label>
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center justify-center gap-2 w-full py-3 bg-[#00704A] hover:bg-[#006241] text-white rounded-xl cursor-pointer transition-all shadow-lg shadow-green-900/10"
+          >
+            <Settings size={18} />
+            <span className="font-semibold text-sm">Gerenciar Planilha</span>
+          </button>
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="lg:ml-64 p-8">
+        <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={async () => {
+            await fetchDashboard();
+            setIsSettingsOpen(false);
+          }}
+        />
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h2 className="text-3xl font-bold text-[#27251F]">
@@ -517,3 +528,99 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function SettingsModal({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: () => void }) {
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchSettings = async () => {
+        const res = await fetch("/api/settings");
+        const data = await res.json();
+        setSheetUrl(data.sheet_url);
+      };
+      fetchSettings();
+    }
+  }, [isOpen]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheet_url: sheetUrl }),
+      });
+      if (res.ok) {
+        // Trigger a sync after saving
+        await fetch("/api/sync-google", { method: "POST" });
+        onSave();
+      }
+    } catch (err) {
+      console.error("Erro ao salvar configurações:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            className="bg-white rounded-2xl p-8 w-full max-w-lg shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold">Gerenciar Planilha Google</h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Cole o link da sua planilha do Google Sheets abaixo. Certifique-se de que a planilha está compartilhada como "Qualquer pessoa com o link pode ver".
+            </p>
+            <div className="mb-6">
+              <label htmlFor="sheet-url" className="text-xs font-bold text-gray-500 mb-2 block">URL da Planilha</label>
+              <input 
+                id="sheet-url"
+                type="text" 
+                value={sheetUrl}
+                onChange={(e) => setSheetUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#00704A] focus:border-transparent transition"
+              />
+            </div>
+            <div className="flex justify-end gap-4">
+              <button 
+                onClick={onClose}
+                className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-semibold text-sm hover:bg-gray-200 transition"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleSave}
+                disabled={isSaving}
+                className="px-6 py-2.5 bg-[#00704A] text-white rounded-lg font-semibold text-sm hover:bg-[#006241] transition flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" /> : <Save size={16} />}
+                Salvar e Sincronizar
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

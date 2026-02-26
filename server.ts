@@ -34,7 +34,17 @@ db.exec(`
     total_saidas REAL,
     saldo_atual REAL
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
+
+// Set a default sheet URL if it doesn't exist
+db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
+  .run("sheet_url", "https://docs.google.com/spreadsheets/d/123o-txQsbM9gf1aOG8sjlTb7M5WAdkptky4ulO4ixHo/export?format=xlsx");
+
 
 app.use(express.json());
 app.use(fileUpload());
@@ -263,11 +273,22 @@ app.post("/api/upload", (req, res) => {
 
 app.post("/api/sync-google", async (req, res) => {
   try {
-    const sheetId = "123o-txQsbM9gf1aOG8sjlTb7M5WAdkptky4ulO4ixHo";
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+    const sheetUrlRow = db.prepare("SELECT value FROM settings WHERE key = 'sheet_url'").get() as { value: string };
+    if (!sheetUrlRow || !sheetUrlRow.value) {
+      throw new Error("URL da planilha não configurada.");
+    }
     
-    const response = await fetch(exportUrl);
-    if (!response.ok) throw new Error("Falha ao baixar planilha do Google.");
+    let url = sheetUrlRow.value;
+    // Ensure the URL is in export format
+    if (!url.includes("/export?format=xlsx")) {
+      const sheetIdMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (!sheetIdMatch) throw new Error("URL da planilha inválida.");
+      const sheetId = sheetIdMatch[1];
+      url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Falha ao baixar planilha do Google. Verifique o link e as permissões de compartilhamento.");
     
     const buffer = await response.arrayBuffer();
     const workbook = xlsx.read(Buffer.from(buffer), { type: "buffer" });
@@ -331,6 +352,21 @@ app.get("/api/dashboard", (req, res) => {
     despesas
   });
 });
+
+app.get("/api/settings", (req, res) => {
+  const sheetUrlRow = db.prepare("SELECT value FROM settings WHERE key = 'sheet_url'").get() as { value: string };
+  res.json({ sheet_url: sheetUrlRow?.value || "" });
+});
+
+app.post("/api/settings", (req, res) => {
+  const { sheet_url } = req.body;
+  if (typeof sheet_url !== 'string') {
+    return res.status(400).json({ error: "URL da planilha inválida." });
+  }
+  db.prepare("UPDATE settings SET value = ? WHERE key = 'sheet_url'").run(sheet_url);
+  res.json({ success: true });
+});
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
