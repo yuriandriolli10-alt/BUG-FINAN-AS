@@ -4,10 +4,19 @@ import * as xlsx from "xlsx";
 import Database from "better-sqlite3";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 
 const app = express();
 const PORT = 3000;
-const db = new Database("finance.db");
+
+// Ensure the data directory exists
+const dataDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const db = new Database(path.join(dataDir, "finance.db"));
+
 
 // Initialize Database
 db.exec(`
@@ -272,28 +281,45 @@ app.post("/api/upload", (req, res) => {
 });
 
 app.post("/api/sync-google", async (req, res) => {
+  console.log("Iniciando sincronização com Google Sheets...");
   try {
     const sheetUrlRow = db.prepare("SELECT value FROM settings WHERE key = 'sheet_url'").get() as { value: string };
     if (!sheetUrlRow || !sheetUrlRow.value) {
+      console.error("URL da planilha não encontrada no banco de dados.");
       throw new Error("URL da planilha não configurada.");
     }
     
     let url = sheetUrlRow.value;
+    console.log(`URL da planilha encontrada: ${url}`);
+    
     // Ensure the URL is in export format
     if (!url.includes("/export?format=xlsx")) {
       const sheetIdMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if (!sheetIdMatch) throw new Error("URL da planilha inválida.");
+      if (!sheetIdMatch) {
+        console.error("URL da planilha com formato inválido.");
+        throw new Error("URL da planilha inválida.");
+      }
       const sheetId = sheetIdMatch[1];
       url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+      console.log(`URL convertida para formato de exportação: ${url}`);
     }
 
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Falha ao baixar planilha do Google. Verifique o link e as permissões de compartilhamento.");
+    const response = await fetch(url).catch(e => {
+      console.error("Erro de rede ao buscar a planilha:", e);
+      throw new Error("Não foi possível acessar a URL da planilha. Verifique a conexão ou o link.");
+    });
+
+    if (!response.ok) {
+      console.error(`Erro ao baixar a planilha. Status: ${response.status}`);
+      throw new Error("Falha ao baixar planilha do Google. Verifique o link e as permissões de compartilhamento.");
+    }
     
+    console.log("Planilha baixada com sucesso. Processando...");
     const buffer = await response.arrayBuffer();
     const workbook = xlsx.read(Buffer.from(buffer), { type: "buffer" });
     
     processWorkbook(workbook);
+    console.log("Processamento da planilha concluído.");
     res.json({ success: true });
   } catch (error: any) {
     console.error("Erro na sincronização:", error);
@@ -360,11 +386,19 @@ app.get("/api/settings", (req, res) => {
 
 app.post("/api/settings", (req, res) => {
   const { sheet_url } = req.body;
+  console.log(`Recebida solicitação para salvar a URL: ${sheet_url}`);
   if (typeof sheet_url !== 'string') {
+    console.error("Tentativa de salvar URL inválida.");
     return res.status(400).json({ error: "URL da planilha inválida." });
   }
-  db.prepare("UPDATE settings SET value = ? WHERE key = 'sheet_url'").run(sheet_url);
-  res.json({ success: true });
+  try {
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'sheet_url'").run(sheet_url);
+    console.log("URL da planilha salva com sucesso no banco de dados.");
+    res.json({ success: true });
+  } catch (dbError) {
+    console.error("Erro ao salvar a URL no banco de dados:", dbError);
+    res.status(500).json({ error: "Falha ao salvar a configuração." });
+  }
 });
 
 
